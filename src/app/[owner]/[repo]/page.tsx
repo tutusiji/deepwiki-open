@@ -4,6 +4,7 @@
 import Ask from '@/components/Ask';
 import Markdown from '@/components/Markdown';
 import ModelSelectionModal from '@/components/ModelSelectionModal';
+import TableOfContents from '@/components/TableOfContents';
 import ThemeToggle from '@/components/theme-toggle';
 import WikiTreeView from '@/components/WikiTreeView';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -11,7 +12,7 @@ import { RepoInfo } from '@/types/repoinfo';
 import getRepoUrl from '@/utils/getRepoUrl';
 import { extractUrlDomain, extractUrlPath } from '@/utils/urlDecoder';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FaBitbucket, FaBookOpen, FaComments, FaDownload, FaExclamationTriangle, FaFileExport, FaFolder, FaGithub, FaGitlab, FaHome, FaSync, FaTimes } from 'react-icons/fa';
 // Define the WikiSection and WikiStructure types directly in this file
@@ -229,7 +230,9 @@ export default function RepoWikiPage() {
   );
   const [error, setError] = useState<string | null>(null);
   const [wikiStructure, setWikiStructure] = useState<WikiStructure | undefined>();
-  const [currentPageId, setCurrentPageId] = useState<string | undefined>();
+  // Get initial page from URL if available
+  const pageParam = searchParams.get('page') || undefined;
+  const [currentPageId, setCurrentPageId] = useState<string | undefined>(pageParam);
   const [generatedPages, setGeneratedPages] = useState<Record<string, WikiPage>>({});
   const [pagesInProgress, setPagesInProgress] = useState(new Set<string>());
   const [isExporting, setIsExporting] = useState(false);
@@ -479,9 +482,16 @@ Based ONLY on the content of the \`[RELEVANT_SOURCE_FILES]\`:
            - par ParallelText ... and ... end (for parallel actions)
            - critical CriticalText ... option ... end (for critical regions)
            - break BreakText ... end (for breaking flows/exceptions)
-         - Add notes for clarification: "Note over A,B: Description", "Note right of A: Detail"
+         - Add notes for clarification on SEPARATE LINES:
+           * CORRECT:
+             A->>B: Message
+             Note over A,B: Description
+           * INCORRECT:
+             A->>B: Message    Note over A,B: Description
+         - Note positions: "Note over A", "Note over A,B", "Note left of A", "Note right of A"
          - Use autonumber directive to add sequence numbers to messages
          - NEVER use flowchart-style labels like A--|label|-->B. Always use a colon for labels: A->>B: My Label
+         - ALWAYS put each statement on its own line - never combine arrows and notes on the same line
 
 4.  **Tables:**
     *   Use Markdown tables to summarize information such as:
@@ -939,17 +949,18 @@ IMPORTANT:
          throw new Error('The specified Ollama embedding model was not found. Please ensure the model is installed locally or select a different embedding model in the configuration.');
        }
 
-        // Clean up markdown delimiters
-      responseText = responseText.replace(/^```(?:xml)?\s*/i, '').replace(/```\s*$/i, '');
+        // Clean up markdown delimiters and extract XML
+        // We look for the <wiki_structure> tag directly as it might be preceded by reasoning or other text
+        const xmlMatch = responseText.match(/<wiki_structure>[\s\S]*?<\/wiki_structure>/m);
+        
+        if (!xmlMatch) {
+          console.error('Could not find wiki_structure in response. Full text:', responseText);
+          throw new Error('No valid XML found in response. The model may have failed to follow formatting instructions.');
+        }
 
-      // Extract wiki structure from response
-      const xmlMatch = responseText.match(/<wiki_structure>[\s\S]*?<\/wiki_structure>/m);
-      if (!xmlMatch) {
-        throw new Error('No valid XML found in response');
-      }
-
-      let xmlText = xmlMatch[0];
-      xmlText = xmlText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+        let xmlText = xmlMatch[0];
+        // Clean invisible characters
+        xmlText = xmlText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
       // Try parsing with DOMParser
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlText, "text/xml");
@@ -1083,7 +1094,21 @@ IMPORTANT:
       };
 
       setWikiStructure(wikiStructure);
-      setCurrentPageId(pages.length > 0 ? pages[0].id : undefined);
+      
+      // Only set default page if no page is selected from URL
+      const currentUrl = new URL(window.location.href);
+      const urlPageId = currentUrl.searchParams.get('page');
+      if (!urlPageId && pages.length > 0) {
+        setCurrentPageId(pages[0].id);
+        // Update URL with default page
+        currentUrl.searchParams.set('page', pages[0].id);
+        router.replace(currentUrl.pathname + currentUrl.search, { scroll: false });
+      } else if (urlPageId && pages.find(p => p.id === urlPageId)) {
+        // Validate that URL page exists in structure
+        setCurrentPageId(urlPageId);
+      } else if (pages.length > 0) {
+        setCurrentPageId(pages[0].id);
+      }
 
       // Start generating content for all pages with controlled concurrency
       if (pages.length > 0) {
@@ -1842,7 +1867,18 @@ IMPORTANT:
 
               setWikiStructure(cachedStructure);
               setGeneratedPages(cachedData.generated_pages);
-              setCurrentPageId(cachedStructure.pages.length > 0 ? cachedStructure.pages[0].id : undefined);
+              
+              // Check URL for page parameter, otherwise use first page
+              const currentUrl = new URL(window.location.href);
+              const urlPageId = currentUrl.searchParams.get('page');
+              if (urlPageId && cachedStructure.pages.find((p: WikiPage) => p.id === urlPageId)) {
+                setCurrentPageId(urlPageId);
+              } else if (cachedStructure.pages.length > 0) {
+                setCurrentPageId(cachedStructure.pages[0].id);
+                currentUrl.searchParams.set('page', cachedStructure.pages[0].id);
+                router.replace(currentUrl.pathname + currentUrl.search, { scroll: false });
+              }
+              
               setIsLoading(false);
               setEmbeddingError(false); 
               setLoadingMessage(undefined);
@@ -1930,10 +1966,27 @@ IMPORTANT:
     saveCache();
   }, [isLoading, error, wikiStructure, generatedPages, effectiveRepoInfo.owner, effectiveRepoInfo.repo, effectiveRepoInfo.type, effectiveRepoInfo.repoUrl, repoUrl, language, isComprehensiveView]);
 
+  const router = useRouter();
+
+  // Handle page selection - updates URL with page parameter
   const handlePageSelect = (pageId: string) => {
-    if (currentPageId != pageId) {
-      setCurrentPageId(pageId)
+    if (currentPageId !== pageId) {
+      setCurrentPageId(pageId);
+      
+      // Update URL with page parameter without reloading
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set('page', pageId);
+      // Remove section when changing pages
+      currentUrl.searchParams.delete('section');
+      router.replace(currentUrl.pathname + currentUrl.search, { scroll: false });
     }
+  };
+
+  // Handle section selection from TOC - updates URL with section anchor
+  const handleSectionSelect = (sectionId: string) => {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('section', sectionId);
+    router.replace(currentUrl.pathname + currentUrl.search, { scroll: false });
   };
 
   const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
@@ -2041,8 +2094,8 @@ IMPORTANT:
           </div>
         ) : wikiStructure ? (
           <div className="h-full overflow-y-auto flex flex-col lg:flex-row gap-4 w-full overflow-hidden bg-[var(--card-bg)] rounded-lg shadow-custom card-japanese">
-            {/* Wiki Navigation */}
-            <div className="h-full w-full lg:w-[280px] xl:w-[320px] flex-shrink-0 bg-[var(--background)]/50 rounded-lg rounded-r-none p-5 border-b lg:border-b-0 lg:border-r border-[var(--border-color)] overflow-y-auto">
+            {/* Wiki Navigation - Left Sidebar */}
+            <div className="h-full w-full lg:w-[260px] xl:w-[280px] flex-shrink-0 bg-[var(--background)]/50 rounded-lg rounded-r-none p-5 border-b lg:border-b-0 lg:border-r border-[var(--border-color)] overflow-y-auto">
               <h3 className="text-lg font-bold text-[var(--foreground)] mb-3 font-serif">{wikiStructure.title}</h3>
               <p className="text-[var(--muted)] text-sm mb-5 leading-relaxed">{wikiStructure.description}</p>
 
@@ -2141,10 +2194,10 @@ IMPORTANT:
               />
             </div>
 
-            {/* Wiki Content */}
-            <div id="wiki-content" className="w-full flex-grow p-6 lg:p-8 overflow-y-auto">
+            {/* Wiki Content - Main Area */}
+            <div id="wiki-content" className="flex-1 min-w-0 p-6 lg:p-8 overflow-y-auto">
               {currentPageId && generatedPages[currentPageId] ? (
-                <div className="max-w-[900px] xl:max-w-[1000px] mx-auto">
+                <div className="max-w-none">
                   <h3 className="text-xl font-bold text-[var(--foreground)] mb-4 break-words font-serif">
                     {generatedPages[currentPageId].title}
                   </h3>
@@ -2191,6 +2244,19 @@ IMPORTANT:
                 </div>
               )}
             </div>
+
+            {/* Table of Contents - Right Sidebar */}
+            {currentPageId && generatedPages[currentPageId] && (
+              <div className="hidden xl:block w-[220px] flex-shrink-0 p-5 border-l border-[var(--border-color)] overflow-y-auto">
+                <TableOfContents 
+                  key={`toc-${currentPageId}`}
+                  content={generatedPages[currentPageId].content}
+                  scrollContainerId="wiki-content"
+                  className="sticky top-4"
+                  onSectionSelect={handleSectionSelect}
+                />
+              </div>
+            )}
           </div>
         ) : null}
       </main>

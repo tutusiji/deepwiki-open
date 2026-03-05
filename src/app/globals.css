@@ -146,3 +146,27 @@ html[data-theme='dark'] .paper-texture {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
+
+/* TOC Styles */
+.toc-container {
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.toc-container::-webkit-scrollbar {
+  width: 4px;
+}
+
+.toc-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.toc-container::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 4px;
+}
+
+/* Smooth scroll for headings */
+html {
+  scroll-behavior: smooth;
+}

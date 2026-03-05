@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useCallback, useState, useEffect, useRef, useMemo } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { FaArrowLeft, FaSync, FaDownload } from 'react-icons/fa';
 import ThemeToggle from '@/components/theme-toggle';
 import Markdown from '@/components/Markdown';
+import TableOfContents from '@/components/TableOfContents';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { RepoInfo } from '@/types/repoinfo';
 import getRepoUrl from '@/utils/getRepoUrl';
@@ -58,6 +59,14 @@ export default function WorkshopPage() {
 
   // Import language context for translations
   const { messages } = useLanguage();
+  const router = useRouter();
+
+  // Handle section selection from TOC
+  const handleSectionSelect = (sectionId: string) => {
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('section', sectionId);
+    router.replace(currentUrl.pathname + currentUrl.search, { scroll: false });
+  };
 
   // Initialize repo info with useMemo to prevent unnecessary re-renders
   const repoInfo = useMemo<RepoInfo>(() => ({
@@ -618,13 +627,30 @@ Estimated time: 20-30 minutes | Combines concepts from all exercises
             <p className="text-red-700 dark:text-red-300">{error}</p>
           </div>
         ) : (
-          <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg shadow-sm p-6">
-            {exportError && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 mb-4">
-                <p className="text-red-700 dark:text-red-300 text-sm">{exportError}</p>
+          <div className="flex flex-col xl:flex-row gap-6">
+            {/* Main content area */}
+            <div id="workshop-content" className="flex-1 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg shadow-sm p-6 overflow-y-auto">
+              {exportError && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3 mb-4">
+                  <p className="text-red-700 dark:text-red-300 text-sm">{exportError}</p>
+                </div>
+              )}
+              <Markdown content={workshopContent} />
+            </div>
+
+            {/* Table of Contents - Right Sidebar */}
+            {workshopContent && (
+              <div className="hidden xl:block w-[220px] flex-shrink-0">
+                <div className="sticky top-4 bg-[var(--card-bg)] border border-[var(--border-color)] rounded-lg shadow-sm p-5">
+                  <TableOfContents 
+                    key="workshop-toc"
+                    content={workshopContent} 
+                    scrollContainerId="workshop-content"
+                    onSectionSelect={handleSectionSelect}
+                  />
+                </div>
               </div>
             )}
-            <Markdown content={workshopContent} />
           </div>
         )}
       </main>

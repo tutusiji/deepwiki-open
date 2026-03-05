@@ -17,15 +17,22 @@ const Markdown: React.FC<MarkdownProps> = ({ content }) => {
       return <p className="mb-3 text-sm leading-relaxed dark:text-white" {...props}>{children}</p>;
     },
     h1({ children, ...props }: { children?: React.ReactNode }) {
-      return <h1 className="text-xl font-bold mt-6 mb-3 dark:text-white" {...props}>{children}</h1>;
+      const id = typeof children === 'string' 
+        ? children.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-')
+        : '';
+      return <h1 id={id || 'heading-1'} className="text-xl font-bold mt-6 mb-3 dark:text-white" style={{ scrollMarginTop: '80px' }} {...props}>{children}</h1>;
     },
     h2({ children, ...props }: { children?: React.ReactNode }) {
+      const id = typeof children === 'string' 
+        ? children.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-')
+        : '';
       // Special styling for ReAct headings
       if (children && typeof children === 'string') {
         const text = children.toString();
         if (text.includes('Thought') || text.includes('Action') || text.includes('Observation') || text.includes('Answer')) {
           return (
             <h2
+              id={id || 'heading-2'}
               className={`text-base font-bold mt-5 mb-3 p-2 rounded ${
                 text.includes('Thought') ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300' :
                 text.includes('Action') ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
@@ -33,6 +40,7 @@ const Markdown: React.FC<MarkdownProps> = ({ content }) => {
                 text.includes('Answer') ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300' :
                 'dark:text-white'
               }`}
+              style={{ scrollMarginTop: '80px' }}
               {...props}
             >
               {children}
@@ -40,13 +48,19 @@ const Markdown: React.FC<MarkdownProps> = ({ content }) => {
           );
         }
       }
-      return <h2 className="text-lg font-bold mt-5 mb-3 dark:text-white" {...props}>{children}</h2>;
+      return <h2 id={id || 'heading-2'} className="text-lg font-bold mt-5 mb-3 dark:text-white" style={{ scrollMarginTop: '80px' }} {...props}>{children}</h2>;
     },
     h3({ children, ...props }: { children?: React.ReactNode }) {
-      return <h3 className="text-base font-semibold mt-4 mb-2 dark:text-white" {...props}>{children}</h3>;
+      const id = typeof children === 'string' 
+        ? children.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-')
+        : '';
+      return <h3 id={id || 'heading-3'} className="text-base font-semibold mt-4 mb-2 dark:text-white" style={{ scrollMarginTop: '80px' }} {...props}>{children}</h3>;
     },
     h4({ children, ...props }: { children?: React.ReactNode }) {
-      return <h4 className="text-sm font-semibold mt-3 mb-2 dark:text-white" {...props}>{children}</h4>;
+      const id = typeof children === 'string' 
+        ? children.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-')
+        : '';
+      return <h4 id={id || 'heading-4'} className="text-sm font-semibold mt-3 mb-2 dark:text-white" style={{ scrollMarginTop: '80px' }} {...props}>{children}</h4>;
     },
     ul({ children, ...props }: { children?: React.ReactNode }) {
       return <ul className="list-disc pl-6 mb-4 text-sm dark:text-white space-y-2" {...props}>{children}</ul>;
