@@ -17,6 +17,9 @@ from adalflow import GoogleGenAIClient, OllamaClient
 
 # Get API keys from environment variables
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+OPENAI_EMBEDDING_API_KEY = os.environ.get('OPENAI_EMBEDDING_API_KEY', OPENAI_API_KEY)
+OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL')
+OPENAI_EMBEDDING_BASE_URL = os.environ.get('OPENAI_EMBEDDING_BASE_URL', OPENAI_BASE_URL)
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
 OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
@@ -28,6 +31,10 @@ AWS_ROLE_ARN = os.environ.get('AWS_ROLE_ARN')
 # Set keys in environment (in case they're needed elsewhere in the code)
 if OPENAI_API_KEY:
     os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+if OPENAI_EMBEDDING_API_KEY:
+    os.environ["OPENAI_EMBEDDING_API_KEY"] = OPENAI_EMBEDDING_API_KEY
+if OPENAI_EMBEDDING_BASE_URL:
+    os.environ["OPENAI_EMBEDDING_BASE_URL"] = OPENAI_EMBEDDING_BASE_URL
 if GOOGLE_API_KEY:
     os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
 if OPENROUTER_API_KEY:
