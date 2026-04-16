@@ -5,10 +5,12 @@ import Ask from '@/components/Ask';
 import Markdown from '@/components/Markdown';
 import ModelSelectionModal from '@/components/ModelSelectionModal';
 import TableOfContents from '@/components/TableOfContents';
+import LayoutModeToggle, { type LayoutMode } from '@/components/LayoutModeToggle';
 import ThemeToggle from '@/components/theme-toggle';
 import WikiTreeView from '@/components/WikiTreeView';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { RepoInfo } from '@/types/repoinfo';
+import { normalizeWikiStructure } from '@/utils/wikiStructure';
 import getRepoUrl from '@/utils/getRepoUrl';
 import { extractUrlDomain, extractUrlPath } from '@/utils/urlDecoder';
 import Link from 'next/link';
@@ -87,6 +89,40 @@ const wikiStyles = `
     @apply p-2 border border-[var(--border-color)];
   }
 `;
+
+const REPO_LAYOUT_STORAGE_KEY = 'deepwiki_repo_layout_mode';
+
+const getPageShellClasses = (layoutMode: LayoutMode): string => {
+  if (layoutMode === 'edge') {
+    return 'h-screen paper-texture flex flex-col';
+  }
+
+  if (layoutMode === 'wide') {
+    return 'h-screen paper-texture p-3 md:p-5 xl:p-6 flex flex-col';
+  }
+
+  return 'h-screen paper-texture p-4 md:p-8 flex flex-col';
+};
+
+const getOuterContainerClasses = (layoutMode: LayoutMode): string => {
+  if (layoutMode === 'edge') {
+    return 'w-full';
+  }
+
+  if (layoutMode === 'wide') {
+    return 'mx-auto w-full max-w-none';
+  }
+
+  return 'mx-auto w-full max-w-[90%] xl:max-w-[1400px]';
+};
+
+const getWikiFrameClasses = (layoutMode: LayoutMode): string => {
+  if (layoutMode === 'edge') {
+    return 'h-full overflow-y-auto flex flex-col lg:flex-row gap-0 w-full overflow-hidden bg-[var(--card-bg)] border-y border-[var(--border-color)]';
+  }
+
+  return 'h-full overflow-y-auto flex flex-col lg:flex-row gap-4 w-full overflow-hidden bg-[var(--card-bg)] rounded-lg shadow-custom card-japanese';
+};
 
 // Helper function to generate cache key for localStorage
 const getCacheKey = (owner: string, repo: string, repoType: string, language: string, isComprehensive: boolean = true): string => {
@@ -262,6 +298,7 @@ export default function RepoWikiPage() {
   // Wiki type state - default to comprehensive view
   const isComprehensiveParam = searchParams.get('comprehensive') !== 'false';
   const [isComprehensiveView, setIsComprehensiveView] = useState(isComprehensiveParam);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('centered');
   // Using useRef for activeContentRequests to maintain a single instance across renders
   // This map tracks which pages are currently being processed to prevent duplicate requests
   // Note: In a multi-threaded environment, additional synchronization would be needed,
@@ -330,6 +367,25 @@ export default function RepoWikiPage() {
       wikiContent.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [currentPageId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storedLayoutMode = window.localStorage.getItem(REPO_LAYOUT_STORAGE_KEY);
+    if (storedLayoutMode === 'centered' || storedLayoutMode === 'wide' || storedLayoutMode === 'edge') {
+      setLayoutMode(storedLayoutMode);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(REPO_LAYOUT_STORAGE_KEY, layoutMode);
+  }, [layoutMode]);
 
   // close the modal when escape is pressed
   useEffect(() => {
@@ -425,10 +481,10 @@ Your task is to generate a comprehensive and accurate technical wiki page in Mar
 
 You will be given:
 1. The "[WIKI_PAGE_TOPIC]" for the page you need to create.
-2. A list of "[RELEVANT_SOURCE_FILES]" from the project that you MUST use as the sole basis for the content. You have access to the full content of these files. You MUST use AT LEAST 5 relevant source files for comprehensive coverage - if fewer are provided, search for additional related files in the codebase.
+2. A list of "[RELEVANT_SOURCE_FILES]" from the project that you MUST use as the sole basis for the content. You have access to the full content of these files. Keep the page tightly scoped and prefer the smallest set of files that fully explains the topic. Search for additional related files only when the provided list clearly misses a critical dependency.
 
 CRITICAL STARTING INSTRUCTION:
-The very first thing on the page MUST be a \`<details>\` block listing ALL the \`[RELEVANT_SOURCE_FILES]\` you used to generate the content. There MUST be AT LEAST 5 source files listed - if fewer were provided, you MUST find additional related files to include.
+The very first thing on the page MUST be a \`<details>\` block listing ALL the \`[RELEVANT_SOURCE_FILES]\` you used to generate the content. Aim to list 3-6 tightly relevant source files for a single topic page, and only go broader when the topic genuinely spans multiple layers.
 Format it exactly like this:
 <details>
 <summary>Relevant source files</summary>
@@ -437,7 +493,7 @@ Remember, do not provide any acknowledgements, disclaimers, apologies, or any ot
 The following files were used as context for generating this wiki page:
 
 ${filePaths.map(path => `- [${path}](${generateFileUrl(path)})`).join('\n')}
-<!-- Add additional relevant files if fewer than 5 were provided -->
+<!-- Add additional relevant files only if they are necessary to explain the page accurately -->
 </details>
 
 Immediately after the \`<details>\` block, the main title of the page should be a H1 Markdown heading: \`# ${page.title}\`.
@@ -449,9 +505,13 @@ Based ONLY on the content of the \`[RELEVANT_SOURCE_FILES]\`:
 2.  **Detailed Sections:** Break down "${page.title}" into logical sections using H2 (\`##\`) and H3 (\`###\`) Markdown headings. For each section:
     *   Explain the architecture, components, data flow, or logic relevant to the section's focus, as evidenced in the source files.
     *   Identify key functions, classes, data structures, API endpoints, or configuration elements pertinent to that section.
+    *   Keep the page scannable. Prefer 4-6 meaningful sections instead of a single long narrative.
+    *   If a subtopic is large enough to deserve its own page, summarize it briefly and point to the adjacent topic instead of expanding too far.
 
 3.  **Mermaid Diagrams:**
-    *   EXTENSIVELY use Mermaid diagrams (e.g., \`flowchart TD\`, \`sequenceDiagram\`, \`classDiagram\`, \`erDiagram\`, \`graph TD\`) to visually represent architectures, flows, relationships, and schemas found in the source files.
+    *   Use Mermaid diagrams SELECTIVELY and only when they materially improve understanding.
+    *   Prefer 0-2 diagrams per page. Do not add diagrams for trivial relationships or obvious control flow.
+    *   Keep diagrams compact so they render smoothly on long pages.
     *   Ensure diagrams are accurate and directly derived from information in the \`[RELEVANT_SOURCE_FILES]\`.
     *   Provide a brief explanation before or after each diagram to give context.
     *   CRITICAL: All diagrams MUST follow strict vertical orientation:
@@ -509,7 +569,7 @@ Based ONLY on the content of the \`[RELEVANT_SOURCE_FILES]\`:
     *   Place citations at the end of the paragraph, under the diagram/table, or after the code snippet.
     *   Use the exact format: \`Sources: [filename.ext:start_line-end_line]()\` for a range, or \`Sources: [filename.ext:line_number]()\` for a single line. Multiple files can be cited: \`Sources: [file1.ext:1-10](), [file2.ext:5](), [dir/file3.ext]()\` (if the whole file is relevant and line numbers are not applicable or too broad).
     *   If an entire section is overwhelmingly based on one or two files, you can cite them under the section heading in addition to more specific citations within the section.
-    *   IMPORTANT: You MUST cite AT LEAST 5 different source files throughout the wiki page to ensure comprehensive coverage.
+    *   IMPORTANT: You MUST cite multiple source files throughout the wiki page, but keep the page focused. Usually 3-6 files is ideal for a single topic page.
 
 7.  **Technical Accuracy:** All information must be derived SOLELY from the \`[RELEVANT_SOURCE_FILES]\`. Do not infer, invent, or use external knowledge about similar systems or common practices unless it's directly supported by the provided code. If information is not present in the provided files, do not include it or explicitly state its absence if crucial to the topic.
 
@@ -765,7 +825,15 @@ Create a structured wiki with the following main sections:
 - Deployment/Infrastructure (how to deploy, what's the infrastructure like)
 - Extensibility and Customization: If the project architecture supports it, explain how to extend or customize its functionality (e.g., plugins, theming, custom modules, hooks).
 
-Each section should contain relevant pages. For example, the "Frontend Components" section might include pages for "Home Page", "Repository Wiki Page", "Ask Component", etc.
+CRITICAL STRUCTURE REQUIREMENTS:
+- Avoid a flat page list. Prefer a 2-level hierarchy with root sections and meaningful subsections whenever the repo is medium or large.
+- Prefer 4-6 root sections, each with 1-3 subsections when there is enough material.
+- Split oversized topics into smaller pages. A page should focus on one cohesive subtopic, not an entire layer of the system.
+- Prefer more focused pages over fewer giant pages so the resulting wiki is easier to navigate and render.
+- Use repository directories, modules, and runtime boundaries as signals for grouping pages.
+- If the frontend or backend is large, split them into multiple subsection groups instead of one catch-all section.
+
+Each section should contain relevant pages. For example, the "Frontend Components" section might include subsection groups such as "App Pages", "UI Components", and "State & Hooks", with focused pages inside each group.
 
 Return your analysis in the following XML format:
 
@@ -836,10 +904,11 @@ IMPORTANT FORMATTING INSTRUCTIONS:
 - Start directly with <wiki_structure> and end with </wiki_structure>
 
 IMPORTANT:
-1. Create ${isComprehensiveView ? '8-12' : '4-6'} pages that would make a ${isComprehensiveView ? 'comprehensive' : 'concise'} wiki for this repository
-2. Each page should focus on a specific aspect of the codebase (e.g., architecture, key features, setup)
+1. Create ${isComprehensiveView ? '10-16' : '5-7'} pages that would make a ${isComprehensiveView ? 'comprehensive' : 'concise'} wiki for this repository
+2. Each page should focus on a specific aspect of the codebase (e.g., architecture, key features, setup), with a scope narrow enough to keep the page readable
 3. The relevant_files should be actual files from the repository that would be used to generate that page
-4. Return ONLY valid XML with the structure specified above, with no markdown code block delimiters`
+4. Do NOT collapse everything into broad catch-all pages like "Frontend" or "Backend" when the repository clearly has multiple modules
+5. Return ONLY valid XML with the structure specified above, with no markdown code block delimiters`
         }]
       };
 
@@ -1004,6 +1073,7 @@ IMPORTANT:
         const importanceEl = pageEl.querySelector('importance');
         const filePathEls = pageEl.querySelectorAll('file_path');
         const relatedEls = pageEl.querySelectorAll('related');
+        const parentSectionEl = pageEl.querySelector('parent_section');
 
         const title = titleEl ? titleEl.textContent || '' : '';
         const importance = importanceEl ?
@@ -1026,7 +1096,8 @@ IMPORTANT:
           content: '', // Will be generated later
           filePaths,
           importance,
-          relatedPages
+          relatedPages,
+          parentId: parentSectionEl?.textContent || undefined
         });
       });
 
@@ -1084,14 +1155,14 @@ IMPORTANT:
       }
 
       // Create wiki structure
-      const wikiStructure: WikiStructure = {
+      const wikiStructure = normalizeWikiStructure<WikiStructure>({
         id: 'wiki',
         title,
         description,
         pages,
         sections,
         rootSections
-      };
+      });
 
       setWikiStructure(wikiStructure);
       
@@ -1750,120 +1821,11 @@ IMPORTANT:
               }
 
               // Ensure the cached structure has sections and rootSections
-              const cachedStructure = {
+              const cachedStructure = normalizeWikiStructure<WikiStructure>({
                 ...cachedData.wiki_structure,
                 sections: cachedData.wiki_structure.sections || [],
                 rootSections: cachedData.wiki_structure.rootSections || []
-              };
-
-              // If sections or rootSections are missing, create intelligent ones based on page titles
-              if (!cachedStructure.sections.length || !cachedStructure.rootSections.length) {
-                const pages = cachedStructure.pages;
-                const sections: WikiSection[] = [];
-                const rootSections: string[] = [];
-
-                // Group pages by common prefixes or categories
-                const pageClusters = new Map<string, WikiPage[]>();
-
-                // Define common categories that might appear in page titles
-                const categories = [
-                  { id: 'overview', title: 'Overview', keywords: ['overview', 'introduction', 'about'] },
-                  { id: 'architecture', title: 'Architecture', keywords: ['architecture', 'structure', 'design', 'system'] },
-                  { id: 'features', title: 'Core Features', keywords: ['feature', 'functionality', 'core'] },
-                  { id: 'components', title: 'Components', keywords: ['component', 'module', 'widget'] },
-                  { id: 'api', title: 'API', keywords: ['api', 'endpoint', 'service', 'server'] },
-                  { id: 'data', title: 'Data Flow', keywords: ['data', 'flow', 'pipeline', 'storage'] },
-                  { id: 'models', title: 'Models', keywords: ['model', 'ai', 'ml', 'integration'] },
-                  { id: 'ui', title: 'User Interface', keywords: ['ui', 'interface', 'frontend', 'page'] },
-                  { id: 'setup', title: 'Setup & Configuration', keywords: ['setup', 'config', 'installation', 'deploy'] }
-                ];
-
-                // Initialize clusters with empty arrays
-                categories.forEach(category => {
-                  pageClusters.set(category.id, []);
-                });
-
-                // Add an "Other" category for pages that don't match any category
-                pageClusters.set('other', []);
-
-                // Assign pages to categories based on title keywords
-                pages.forEach((page: WikiPage) => {
-                  const title = page.title.toLowerCase();
-                  let assigned = false;
-
-                  // Try to find a matching category
-                  for (const category of categories) {
-                    if (category.keywords.some(keyword => title.includes(keyword))) {
-                      pageClusters.get(category.id)?.push(page);
-                      assigned = true;
-                      break;
-                    }
-                  }
-
-                  // If no category matched, put in "Other"
-                  if (!assigned) {
-                    pageClusters.get('other')?.push(page);
-                  }
-                });
-
-                // Create sections for non-empty categories
-                for (const [categoryId, categoryPages] of pageClusters.entries()) {
-                  if (categoryPages.length > 0) {
-                    const category = categories.find(c => c.id === categoryId) ||
-                                    { id: categoryId, title: categoryId === 'other' ? 'Other' : categoryId.charAt(0).toUpperCase() + categoryId.slice(1) };
-
-                    const sectionId = `section-${categoryId}`;
-                    sections.push({
-                      id: sectionId,
-                      title: category.title,
-                      pages: categoryPages.map((p: WikiPage) => p.id)
-                    });
-                    rootSections.push(sectionId);
-
-                    // Update page parentId
-                    categoryPages.forEach((page: WikiPage) => {
-                      page.parentId = sectionId;
-                    });
-                  }
-                }
-
-                // If we still have no sections (unlikely), fall back to importance-based grouping
-                if (sections.length === 0) {
-                  const highImportancePages = pages.filter((p: WikiPage) => p.importance === 'high').map((p: WikiPage) => p.id);
-                  const mediumImportancePages = pages.filter((p: WikiPage) => p.importance === 'medium').map((p: WikiPage) => p.id);
-                  const lowImportancePages = pages.filter((p: WikiPage) => p.importance === 'low').map((p: WikiPage) => p.id);
-
-                  if (highImportancePages.length > 0) {
-                    sections.push({
-                      id: 'section-high',
-                      title: 'Core Components',
-                      pages: highImportancePages
-                    });
-                    rootSections.push('section-high');
-                  }
-
-                  if (mediumImportancePages.length > 0) {
-                    sections.push({
-                      id: 'section-medium',
-                      title: 'Key Features',
-                      pages: mediumImportancePages
-                    });
-                    rootSections.push('section-medium');
-                  }
-
-                  if (lowImportancePages.length > 0) {
-                    sections.push({
-                      id: 'section-low',
-                      title: 'Additional Information',
-                      pages: lowImportancePages
-                    });
-                    rootSections.push('section-low');
-                  }
-                }
-
-                cachedStructure.sections = sections;
-                cachedStructure.rootSections = rootSections;
-              }
+              });
 
               setWikiStructure(cachedStructure);
               setGeneratedPages(cachedData.generated_pages);
@@ -1990,22 +1952,117 @@ IMPORTANT:
   };
 
   const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
+  const pageShellClasses = getPageShellClasses(layoutMode);
+  const outerContainerClasses = getOuterContainerClasses(layoutMode);
+  const wikiFrameClasses = getWikiFrameClasses(layoutMode);
+  const RepoTypeIcon = effectiveRepoInfo.type === 'local'
+    ? FaFolder
+    : effectiveRepoInfo.type === 'github'
+      ? FaGithub
+      : effectiveRepoInfo.type === 'gitlab'
+        ? FaGitlab
+        : FaBitbucket;
+  const headerTitle = wikiStructure?.title || (
+    effectiveRepoInfo.type === 'local'
+      ? effectiveRepoInfo.repo
+      : `${effectiveRepoInfo.owner}/${effectiveRepoInfo.repo}`
+  );
+  const headerDescription = wikiStructure?.description || (
+    effectiveRepoInfo.type === 'local'
+      ? 'Generated repository wiki, structure analysis, and page-level technical notes for your local codebase.'
+      : `Generated repository wiki, structure analysis, and page-level technical notes for ${effectiveRepoInfo.owner}/${effectiveRepoInfo.repo}.`
+  );
+  const repoIdentityLabel = effectiveRepoInfo.type === 'local'
+    ? (effectiveRepoInfo.localPath || effectiveRepoInfo.repo)
+    : `${effectiveRepoInfo.owner}/${effectiveRepoInfo.repo}`;
+  const currentPageTitle = currentPageId
+    ? generatedPages[currentPageId]?.title || wikiStructure?.pages.find(page => page.id === currentPageId)?.title
+    : undefined;
+  const topHeaderCardClasses = layoutMode === 'edge'
+    ? 'relative overflow-hidden border-y border-[var(--border-color)] bg-[var(--card-bg)] px-4 py-3.5 md:px-6 md:py-4'
+    : 'relative overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--card-bg)] px-4 py-4 md:px-5 md:py-4.5 shadow-custom card-japanese';
 
   return (
-    <div className="h-screen paper-texture p-4 md:p-8 flex flex-col">
+    <div className={pageShellClasses}>
       <style>{wikiStyles}</style>
 
-      <header className="max-w-[90%] xl:max-w-[1400px] mx-auto mb-8 h-fit w-full">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-[var(--accent-primary)] hover:text-[var(--highlight)] flex items-center gap-1.5 transition-colors border-b border-[var(--border-color)] hover:border-[var(--accent-primary)] pb-0.5">
-              <FaHome /> {messages.repoPage?.home || 'Home'}
-            </Link>
+      <header className={`${outerContainerClasses} mb-4 h-fit ${layoutMode === 'edge' ? 'px-4 py-3 md:px-6' : ''}`}>
+        <div className={topHeaderCardClasses}>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-[var(--accent-primary)]/12 via-[var(--accent-secondary)]/8 to-transparent" />
+          <div className="relative flex flex-col gap-3.5 xl:flex-row xl:items-center xl:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="mb-3 flex flex-wrap items-center gap-2.5">
+                <Link href="/" className="flex items-center gap-1.5 border-b border-[var(--border-color)] pb-0.5 text-[var(--accent-primary)] transition-colors hover:border-[var(--accent-primary)] hover:text-[var(--highlight)]">
+                  <FaHome /> {messages.repoPage?.home || 'Home'}
+                </Link>
+
+                {effectiveRepoInfo.type === 'local' ? (
+                  <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--border-color)] bg-[var(--background)]/75 px-2.5 py-1 text-xs text-[var(--muted)]">
+                    <RepoTypeIcon className="text-[var(--foreground)]" />
+                    <span className="truncate">{repoIdentityLabel}</span>
+                  </div>
+                ) : (
+                  <a
+                    href={effectiveRepoInfo.repoUrl ?? ''}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex max-w-full items-center gap-2 rounded-full border border-[var(--border-color)] bg-[var(--background)]/75 px-2.5 py-1 text-xs text-[var(--muted)] transition-colors hover:border-[var(--accent-primary)] hover:text-[var(--foreground)]"
+                  >
+                    <RepoTypeIcon className="text-[var(--foreground)]" />
+                    <span className="truncate">{repoIdentityLabel}</span>
+                  </a>
+                )}
+
+                {wikiStructure && (
+                  <div className="inline-flex items-center gap-2 rounded-full border border-[var(--accent-primary)]/25 bg-[var(--accent-primary)]/10 px-2.5 py-1 text-xs text-[var(--accent-primary)]">
+                    <FaBookOpen className="text-[10px]" />
+                    <span>{wikiStructure.pages.length} pages</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="max-w-4xl">
+                <p className="mb-1 text-[10px] uppercase tracking-[0.22em] text-[var(--muted)]">
+                  Repository Wiki
+                </p>
+                <h1 className="break-words text-2xl font-bold text-[var(--foreground)] md:text-[2rem] xl:text-[2.35rem] font-serif leading-tight">
+                  {headerTitle}
+                </h1>
+                <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--muted)] md:text-[15px]">
+                  {headerDescription}
+                </p>
+              </div>
+            </div>
+
+            <div className="w-full xl:max-w-[290px]">
+              <div className="rounded-xl border border-[var(--border-color)] bg-[var(--background)]/70 p-3 backdrop-blur-sm">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">
+                  Current Focus
+                </p>
+                <div className="mt-1.5 text-sm font-semibold text-[var(--foreground)] font-serif md:text-[15px] leading-snug">
+                  {currentPageTitle || 'Browse the generated wiki pages'}
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs text-[var(--muted)]">
+                  <span className={`rounded-full px-2 py-0.5 border ${isComprehensiveView
+                    ? 'border-[var(--accent-primary)]/25 bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
+                    : 'border-[var(--border-color)] bg-[var(--card-bg)] text-[var(--foreground)]'}`}>
+                    {isComprehensiveView
+                      ? (messages.form?.comprehensive || 'Comprehensive')
+                      : (messages.form?.concise || 'Concise')}
+                  </span>
+                  {currentPageTitle && wikiStructure && (
+                    <span className="rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] px-2 py-0.5">
+                      {wikiStructure.pages.findIndex(page => page.id === currentPageId) + 1} / {wikiStructure.pages.length}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-[90%] xl:max-w-[1400px] mx-auto overflow-y-auto">
+      <main className={`flex-1 overflow-y-auto ${outerContainerClasses} ${layoutMode === 'edge' ? 'px-0' : ''}`}>
         {isLoading ? (
           <div className="flex flex-col items-center justify-center p-8 bg-[var(--card-bg)] rounded-lg shadow-custom card-japanese">
             <div className="relative mb-6">
@@ -2093,11 +2150,27 @@ IMPORTANT:
             </div>
           </div>
         ) : wikiStructure ? (
-          <div className="h-full overflow-y-auto flex flex-col lg:flex-row gap-4 w-full overflow-hidden bg-[var(--card-bg)] rounded-lg shadow-custom card-japanese">
+          <div className={wikiFrameClasses}>
             {/* Wiki Navigation - Left Sidebar */}
-            <div className="h-full w-full lg:w-[260px] xl:w-[280px] flex-shrink-0 bg-[var(--background)]/50 rounded-lg rounded-r-none p-5 border-b lg:border-b-0 lg:border-r border-[var(--border-color)] overflow-y-auto">
-              <h3 className="text-lg font-bold text-[var(--foreground)] mb-3 font-serif">{wikiStructure.title}</h3>
-              <p className="text-[var(--muted)] text-sm mb-5 leading-relaxed">{wikiStructure.description}</p>
+            <div className={`h-full w-full lg:w-[260px] xl:w-[280px] flex-shrink-0 bg-[var(--background)]/50 p-5 border-b lg:border-b-0 lg:border-r border-[var(--border-color)] overflow-y-auto ${layoutMode === 'edge' ? '' : 'rounded-lg rounded-r-none'}`}>
+              <div className="mb-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--muted)]">
+                      Navigation
+                    </p>
+                    <h3 className="mt-2 text-base font-semibold text-[var(--foreground)] font-serif">
+                      {messages.repoPage?.pages || 'Pages'}
+                    </h3>
+                  </div>
+                  <span className="rounded-full border border-[var(--border-color)] bg-[var(--card-bg)] px-2.5 py-1 text-xs text-[var(--muted)]">
+                    {wikiStructure.pages.length}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">
+                  Jump between generated sections, refresh the wiki, or export the current result.
+                </p>
+              </div>
 
               {/* Display repository info */}
               <div className="text-xs text-[var(--muted)] mb-5 flex items-center">
@@ -2195,7 +2268,7 @@ IMPORTANT:
             </div>
 
             {/* Wiki Content - Main Area */}
-            <div id="wiki-content" className="flex-1 min-w-0 p-6 lg:p-8 overflow-y-auto">
+            <div id="wiki-content" className={`flex-1 min-w-0 p-6 lg:p-8 overflow-y-auto ${layoutMode === 'edge' ? 'bg-[var(--card-bg)]' : ''}`}>
               {currentPageId && generatedPages[currentPageId] ? (
                 <div className="max-w-none">
                   <h3 className="text-xl font-bold text-[var(--foreground)] mb-4 break-words font-serif">
@@ -2261,12 +2334,15 @@ IMPORTANT:
         ) : null}
       </main>
 
-      <footer className="max-w-[90%] xl:max-w-[1400px] mx-auto mt-8 flex flex-col gap-4 w-full">
-        <div className="flex justify-between items-center gap-4 text-center text-[var(--muted)] text-sm h-fit w-full bg-[var(--card-bg)] rounded-lg p-3 shadow-sm border border-[var(--border-color)]">
+      <footer className={`${outerContainerClasses} mt-6 flex w-full flex-col gap-4 ${layoutMode === 'edge' ? 'px-4 pb-4 md:px-6' : ''}`}>
+        <div className={`flex flex-col justify-between gap-4 text-center text-[var(--muted)] text-sm h-fit w-full bg-[var(--card-bg)] p-3 border border-[var(--border-color)] ${layoutMode === 'edge' ? '' : 'rounded-lg shadow-sm'} md:flex-row md:items-center`}>
           <p className="flex-1 font-serif">
             {messages.footer?.copyright || 'DeepWiki - Generate Wiki from GitHub/Gitlab/Bitbucket repositories'}
           </p>
-          <ThemeToggle />
+          <div className="flex items-center justify-center gap-3 md:justify-end">
+            <LayoutModeToggle value={layoutMode} onChange={setLayoutMode} />
+            <ThemeToggle />
+          </div>
         </div>
       </footer>
 

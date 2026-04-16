@@ -16,7 +16,10 @@ This is the backend API for DeepWiki, providing smart code analysis and AI-power
 
 ```bash
 # From the project root
-python -m pip install poetry==2.0.1 && poetry install -C api
+python scripts/install_python_deps.py
+# or one-click scripts
+# Windows: install_python_deps.bat
+# macOS/Linux: ./install_python_deps.sh
 ```
 
 ### Step 2: Set Up Environment Variables

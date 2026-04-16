@@ -97,9 +97,10 @@ OLLAMA_HOST=your_ollama_host
 
 ```bash
 # Install Python dependencies
-python -m pip install poetry==2.0.1 && poetry install -C api
-或者
-python -m pip install fastapi "uvicorn[standard]" pydantic google-generativeai tiktoken adalflow numpy faiss-cpu langid requests jinja2 python-dotenv openai ollama aiohttp boto3 websockets azure-identity azure-core watchfiles
+python scripts/install_python_deps.py
+# or one-click scripts
+# Windows: install_python_deps.bat
+# macOS/Linux: ./install_python_deps.sh
 # Start the API server
 python -m api.main
 ```
